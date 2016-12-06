@@ -1,4 +1,4 @@
- include macros.inc
+  include macros.inc
 
 .MODEL SMALL
 .STACK 64    
@@ -326,14 +326,14 @@ Shoot:
         mov dl,' '
         int 21h  
      
-        add bl ,6 
+        add bl ,4 
         
         ;Fady's Part
 		mov ah,3h
 		mov bh,0h
 		int 10h
          
-		cmp dl,69                             ;X is higher than the Goal Line
+		cmp dl,68                             ;X is higher than the Goal Line
 		JAE GoToCheckScores  
 		
     Loop Horizontal         
@@ -341,7 +341,7 @@ Shoot:
     GoToCheckScores:
 		Call CheckScores
 	cmp GameOver, 0
-    jz CHECK_1 
+    JE CHECK_1 
         
     
 Exit: 
@@ -717,7 +717,7 @@ Write_P1_P2 PROC
     int 10h
                             
     cmp current_player, 1  ;Check if the current player is player1
-    jz write_1
+    JE write_1
     
     ;if player 2 => Print 2
 	mov al, 0
@@ -736,7 +736,7 @@ Write_P1_P2 PROC
     
     mov ax,0
     AND ax,ax
-    jz Exit_Write_P1_P2
+    JE Exit_Write_P1_P2
     
     ;if player 1 => Print 1
     write_1:
