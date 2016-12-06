@@ -1,4 +1,5 @@
-  include macros.inc
+ 
+ include macros.inc
 
 .MODEL SMALL
 .STACK 64    
