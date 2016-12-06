@@ -1,4 +1,3 @@
- 
  include macros.inc
 
 .MODEL SMALL
