@@ -94,8 +94,11 @@ include macros.inc
  GameOver db 0     
  
  ver db ?         			;Last Vertical Ball Postion
- hor db 72        			;Last Horizontal Ball Postion
-
+ hor db 72        			;Last Horizontal Ball Postion    
+ 
+ SendInstruction db ?
+ RecievedInstruction db ? 
+ 
 								;*****************************************************;
 								
 								
@@ -118,8 +121,8 @@ include macros.inc
     Buffer            	db 79 dup('$')
     BufferSize        	db 0
     
-    intialMyRow       	equ 0				;not zero (bec of instrcution)
-    intialChatRow     	equ 1				;25>intialChatRow>intialMyRow>0
+    intialMyRow       	equ 7				;not zero (bec of instrcution)
+    intialChatRow     	equ 8				;25>intialChatRow>intialMyRow>0
 	
 	intialInMyRow      	equ 18				;not zero (bec of instrcution)
     intialInChatRow    	equ 19				;25>intialChatRow>intialMyRow>0
@@ -200,6 +203,8 @@ MAIN    PROC
 	 main_continue:
 	 cmp game_host, 0
 	 jz start_chat
+	 mov current_player,2
+	 
 	 ;Start Game
 	 cmp game_host, 1
 	 jz start_game
@@ -241,7 +246,10 @@ Move PROC
 	push bx
 	push cx
 	push dx
-	push ds
+	push ds 
+	
+	cmp current_player,1
+	JE ENDD
 	
    RightU:
     CMP Ah,48h
@@ -643,6 +651,34 @@ DrawBall PROC
 	push cx
 	push dx
 	
+	cmp current_player, 1
+	JNE DrawBall_End
+	
+	mov bh, 0
+	mov dx, 0
+	mov al, 'o'
+	mov bl, Ball_Color
+	mov ah, 9
+	mov cx, 1
+	int 10h
+	
+	DrawBall_End:
+	pop dx
+	pop cx
+	pop bx
+	pop ax
+
+	RET
+DrawBall ENDP
+;==================================================
+DrawShootingBall PROC
+
+	push ax
+	push bx
+	push cx
+	push dx
+	
+	
 	mov bh, 0
 	mov dx, 0
 	mov al, 'o'
@@ -657,9 +693,8 @@ DrawBall PROC
 	pop ax
 
 	RET
-DrawBall ENDP
+DrawShootingBall ENDP
 ;==================================================
-
 Write_P1_P2 PROC
 	push ax
 	push bx
@@ -681,7 +716,13 @@ Write_P1_P2 PROC
     int 10h
     
     ;Write P1 or P2 under the + sign
-    mov al, 0
+    
+                            
+    cmp current_player, 1  ;Check if the current player is player1
+    je write_1
+    
+    ;if player 2 => Print P2
+	mov al, 0
     mov ah, 2
     mov dl, 5 ;Move to position X=5
     mov dh, 8 ;Move to position Y=8
@@ -694,11 +735,7 @@ Write_P1_P2 PROC
     mov ah, 9
     mov cx, 1
     int 10h
-                            
-    cmp current_player, 1  ;Check if the current player is player1
-    je write_1
-    
-    ;if player 2 => Print 2
+	
 	mov al, 0
     mov ah, 2
     mov dl, 6 ;Move to position X=6
@@ -716,7 +753,20 @@ Write_P1_P2 PROC
     jmp Exit_Write_P1_P2
     
     write_1:
-	;if player 1 => Print 1
+	;if player 1 => Print ME
+	mov al, 0
+    mov ah, 2
+    mov dl, 5 ;Move to position X=5
+    mov dh, 8 ;Move to position Y=8
+    int 10h 
+    
+    mov bh, 0
+    mov dx, 0
+	mov al, 'M'
+	mov bl, Player_Color
+    mov ah, 9
+    mov cx, 1
+    int 10h
 	mov al, 0
     mov ah, 2
     mov dl, 6 ;Move to position X=6
@@ -725,7 +775,7 @@ Write_P1_P2 PROC
 	
     mov bh, 0
     mov dx, 0
-	mov al, '1'
+	mov al, 'E'
 	mov bl, Player_Color
     mov ah, 9
     mov cx, 1
@@ -1168,7 +1218,10 @@ StartGame PROC
           
         
         
-    FirstHalfCycle:  
+    FirstHalfCycle:
+       call ReceiveCommand
+       cmp RecievedInstruction , 4dh
+       JE Shoot1
        call InGameChat_Receive
                
        mov ah,2
@@ -1180,7 +1233,12 @@ StartGame PROC
        
        ;Draw 'o'
        Call DrawBall 
-      
+       call Delay
+       
+       Call ReceiveCommand
+       cmp RecievedInstruction , 4dh
+       JE Shoot1
+       
        Call Delay
        call InGameChat_Receive
 	   
@@ -1194,7 +1252,10 @@ StartGame PROC
        mov dl,' '
        int 21h  
        
-       inc bl
+       inc bl 
+       Call ReceiveCommand
+       cmp RecievedInstruction , 4dh
+       JE Shoot1
          
        MOV AH,1             	  ;Get key pressed
        INT 16H  		  ;ZF=1-->NO KEY ,,, ZF=0-->KEY AVAILABLE
@@ -1204,14 +1265,21 @@ StartGame PROC
                      
     Key_Pressed1:   
        MOV AH,0             	  ;clear used scan code from buffer
-       INT 16H  
-		Call InGameChat_Send
+       INT 16H 
+       mov SendInstruction , ah 
+       Call SendCommand 
+        
+	    Call InGameChat_Send
+	    
+	    cmp current_player, 1
+	   JNE Continuechecking1
 		
        cmp ah,Shoot_Key   
-       JE Shoot     
+       JE Shoot1  
+       
+       Continuechecking1:   
        cmp ah,1H                  ;Esc to terminate the Game
-       JE Exit_1
-        
+       JE Exitting 
 		
        Call Move 
          
@@ -1226,8 +1294,15 @@ StartGame PROC
        mov cx,Coordinate_BallCurve[2] ; radius 
        dec cx 
        mov temp,si               
-    
-    SecondHalfCycle:  
+    jmp SecondHalfCycle
+	
+	shoot1:
+	jmp shoot 
+     
+    SecondHalfCycle: 
+    call ReceiveCommand
+	cmp RecievedInstruction , 4dh
+    JE shoot 
 		call InGameChat_Receive
 		
        mov ah,2
@@ -1239,6 +1314,11 @@ StartGame PROC
        
        ;Draw 'o'
        Call DrawBall 
+       call Delay 
+        
+       call ReceiveCommand 
+       cmp RecievedInstruction , 4dh
+       JE Shoot
        
        Call Delay
        call InGameChat_Receive
@@ -1255,41 +1335,55 @@ StartGame PROC
         mov dl,' '
         int 21h  
             
-        inc bl     
+        inc bl 
+        call ReceiveCommand 
+       cmp RecievedInstruction , 4dh
+       JE Shoot    
         
         MOV AH,1              		;Get key pressed
         INT 16H  			;ZF=1-->NO KEY ,,, ZF=0-->KEY AVAILABLE
         
         JNE Key_Pressed2
-        JMP NO_Key_Pressed2               
+        JMP NO_Key_Pressed2 
+        
+        Exitting:
+        jmp Exit_1
+                 
    
     Key_Pressed2:   
         MOV AH,0             		;clear used scan code from buffer
-        INT 16H  
-		Call InGameChat_Send
-        cmp ah,Shoot_Key   
-        JE Shoot 
-	 jmp Continuechecking
-        CHECK_1:
-        JMP CHECK       
-       
-       Continuechecking:
+        INT 16H
+        
+        mov SendInstruction , ah 
+       Call SendCommand
+         
+		Call InGameChat_Send 
+		
+       cmp current_player, 1
+	   JNE Continuechecking2
+	   
+       cmp ah,Shoot_Key   
+       JE shoot1
+        
+     Continuechecking2:
         cmp ah,1H                  	;Esc to terminate the Game
-        JE Exit2
-	
-        Call Move 
-          
-             
-    NO_Key_Pressed2:    
+        JE Exit_1
+		
+        Call Move
+        ;call MoveRecieved 
+       
+    NO_Key_Pressed2:  
                      
     loop SecondHalfCycle
                    
-CMP ah,Shoot_Key 
-
-JNE CHECK_1   
+JMP CHECK_1   
 
 Exit_1:
-JMP Exit2
+JMP Exit2 
+                   
+         
+ CHECK_1:
+ JMP CHECK          
 
 ;si contains co-ordinate of start of shooting line
 
@@ -1300,16 +1394,22 @@ Shoot:
         mov bl,1   
         mov temp,si
     Horizontal:  
+        
+        call ReceiveCommand
            
         MOV AH,1              ;Get key pressed
-        INT 16H  
+        INT 16H   
+        
        
         JNE Key_Pressed3
         JMP NO_Key_Pressed3               
        
     Key_Pressed3:   
         MOV AH,0          	 ;clear used scan code from buffer
-        INT 16H      
+        INT 16H  
+        
+        mov SendInstruction , ah 
+       Call SendCommand     
         
        Call InGameChat_Send
         Call Move 
@@ -1322,7 +1422,7 @@ Shoot:
         int 10h   
         
         ;Draw
-        Call DrawBall
+        Call DrawShootingBall
         
         Call Delay
         call InGameChat_Receive
@@ -1346,7 +1446,8 @@ Shoot:
          
 	cmp dl,68                             ;X is Greater than or Equal the Goal Line
 	JAE GoToCheckScores  		      ;It Reached the Line
-		
+	
+	mov RecievedInstruction , 0	
     Loop Horizontal         
 	
     GoToCheckScores:
@@ -2365,6 +2466,140 @@ ChooseLevel Proc
 	
 	ChooseLevel_End:
 	RET
-ChooseLevel ENDP
+ChooseLevel ENDP  
+
+
+SendCommand Proc
+pushf
+push ax
+push bx
+push cx
+push dx
+push ds
+ 
+ ;Up -> 48
+ ;Down -> 50
+ ;Right -> 4d 
+ 
+ cmp SendInstruction ,0
+ JE SendCommand_End
+ 
+ 
+ ;If current player is 1, this means that he can only shoot
+ ;If current player is 2, this means that he can only move the goalkeeper
+ 
+ cmp current_player, 1
+ JE SendShoot
+ ;Send up and down arrows if pressed
+ cmp SendInstruction , 48h
+ JE str
+ cmp SendInstruction , 50h
+ JE str
+ jmp SendCommand_End 
+ 
+ 
+ SendShoot:
+ ;Send right arrow if pressed
+ cmp SendInstruction , 4dh
+ JE str
+ 
+jmp SendCommand_End 
+  
+ str:
+ 
+    mov al , SendInstruction 
+    ContIns:
+    mov dx,03FDH                 
+    in Al,Dx
+    AND al,00100000b             ;AND al,00100000b
+    JE ContIns
+    mov al , SendInstruction
+    mov dx,03F8H
+    out Dx,Al
+	mov SendInstruction, 0
+	
+	SendCommand_End:
+pop ds
+pop dx
+pop cx
+pop bx
+pop ax
+popf
+RET
+
+SendCommand ENDP
+
+ReceiveCommand PROC 
+	pushf
+    push ax
+	push bx
+	push cx
+	push dx  
+    
+ ;Up -> 48
+ ;Down -> 50
+ ;Right -> 4d 
+    
+	RecievingIns:
+	mov DX,03FDH                ;Recieving and Setting Data                          ;Check if there is a recieved Charactor
+    in al,dx
+    AND al,1                ;AND
+    JE EndIns 
+            
+    
+    Mov DX,03F8H
+    IN AL,DX   
+    
+    Mov RecievedInstruction, al 
+    
+	mov ah, 48h
+    cmp RecievedInstruction , ah
+    JE Moving
+    
+	mov ah, 50h
+    cmp RecievedInstruction, ah   
+    JE Moving  
+    
+    jmp EndIns
+
+    Moving: 
+    ;print RBCenterD,20,Goalkeeper_Color, ' '
+    call MoveRecieved  
+	
+	   
+    EndIns: 
+	pop dx
+	pop cx
+	pop bx
+	pop ax
+	popf
+	RET 
+    
+ReceiveCommand ENDP  
+
+MoveRecieved Proc 
+   push ax
+   push bx
+   push cx
+   push dx 
+	
+   RightUU:
+    CMP RecievedInstruction,48h
+    JNE RightDD    						; If the up arrow is not pressed jump to RightD
+    Call RightUp					; If pressed, Call RightUp Procedure
+   RightDD:    
+    CMP RecievedInstruction,50h			
+    JNE ENDDD            				; If the down arrow is not pressed jump to ENDD
+    CALL RightDown						; If pressed, Call RightDown
+
+   ENDDD:  
+  
+   pop dx
+   pop cx
+   pop bx
+   pop ax
+   
+   ret						
+MoveRecieved Endp 
 
 END MAIN    
